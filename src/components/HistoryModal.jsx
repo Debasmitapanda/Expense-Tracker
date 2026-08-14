@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, History, Calendar, Download, ArrowRight, IndianRupee, FileSpreadsheet, Building2, CalendarDays, Filter } from 'lucide-react';
+import { X, History, Calendar, Download, ArrowRight, FileSpreadsheet, Building2, Filter, PieChart, ChevronDown, ChevronUp } from 'lucide-react';
 import { exportDailyExpensesPDF, exportMonthlyExpensesPDF } from '../utils/pdfExport';
 
 export default function HistoryModal({ 
@@ -10,6 +10,7 @@ export default function HistoryModal({
 }) {
   const [selectedMonthKey, setSelectedMonthKey] = useState('ALL');
   const [isExportingMonthly, setIsExportingMonthly] = useState(false);
+  const [showCategoryBreakdown, setShowCategoryBreakdown] = useState(true);
 
   if (!isOpen) return null;
 
@@ -89,19 +90,56 @@ export default function HistoryModal({
     return item.date.startsWith(selectedMonthKey);
   });
 
-  // Compute overall totals for current view / month filter
+  // Compute overall totals & category-wise sums for current view / month filter
   let viewTotal = 0;
   let viewOnline = 0;
   let viewCash = 0;
   let viewWithdraw = 0;
   let viewDaysCount = filteredDailySummaries.length;
+  const categorySums = {};
 
   filteredDailySummaries.forEach(day => {
     viewTotal += day.totalAmount;
     viewOnline += day.onlineTotal;
     viewCash += day.cashTotal;
     viewWithdraw += day.withdrawTotal;
+
+    if (day.entries && day.entries.length > 0) {
+      day.entries.forEach(entry => {
+        const catId = entry.categoryId || entry.categoryName;
+        const amt = parseFloat(entry.amount) || 0;
+        const isWithdraw = Boolean(entry.isCashWithdraw || catId === 'cash_withdraw');
+        const pMode = entry.paymentMode || 'Online';
+        const name = entry.categoryName || catId;
+
+        if (!categorySums[catId]) {
+          categorySums[catId] = {
+            categoryId: catId,
+            categoryName: name,
+            totalAmount: 0,
+            onlineAmount: 0,
+            cashAmount: 0,
+            count: 0,
+            isCashWithdraw: isWithdraw
+          };
+        }
+
+        categorySums[catId].totalAmount += amt;
+        categorySums[catId].count += 1;
+        if (!isWithdraw) {
+          if (pMode === 'Online') {
+            categorySums[catId].onlineAmount += amt;
+          } else {
+            categorySums[catId].cashAmount += amt;
+          }
+        }
+      });
+    }
   });
+
+  const categoryList = Object.values(categorySums).filter(c => !c.isCashWithdraw);
+  categoryList.sort((a, b) => b.totalAmount - a.totalAmount);
+  const withdrawCategoryList = Object.values(categorySums).filter(c => c.isCashWithdraw);
 
   const activeMonthLabel = selectedMonthKey === 'ALL' 
     ? 'All Months' 
@@ -135,7 +173,7 @@ export default function HistoryModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
+      <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
         {/* Modal Header */}
         <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -144,10 +182,10 @@ export default function HistoryModal({
             </div>
             <div>
               <h3 className="text-base sm:text-lg font-black text-slate-800 tracking-tight">
-                Permanent Expense History & Monthly Logs
+                Expense History & Monthly Summary
               </h3>
               <p className="text-xs text-slate-500 font-medium">
-                Saved history is permanently stored. Filter by month & download monthly reports.
+                Category totals, grand total summary & monthly PDF downloads.
               </p>
             </div>
           </div>
@@ -195,7 +233,7 @@ export default function HistoryModal({
           {/* Monthly Totals Overview Card */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-emerald-800/80">
             <div className="bg-emerald-800/50 p-2.5 rounded-xl border border-emerald-700/60">
-              <span className="text-[10px] text-emerald-200 uppercase font-bold block">Total Expense</span>
+              <span className="text-[10px] text-emerald-200 uppercase font-bold block">Grand Total</span>
               <span className="text-base font-black text-white">₹{viewTotal.toLocaleString('en-IN')}</span>
             </div>
 
@@ -215,6 +253,41 @@ export default function HistoryModal({
             </div>
           </div>
         </div>
+
+        {/* Category-Wise Monthly Summary Breakdown Card */}
+        {categoryList.length > 0 && (
+          <div className="bg-slate-100/90 border-b border-slate-200 p-3.5 space-y-2">
+            <button
+              onClick={() => setShowCategoryBreakdown(!showCategoryBreakdown)}
+              className="w-full flex items-center justify-between text-xs font-black text-slate-800 uppercase tracking-wider cursor-pointer"
+            >
+              <div className="flex items-center space-x-1.5 text-emerald-800">
+                <PieChart className="w-4 h-4 text-emerald-600" />
+                <span>{activeMonthLabel} Category-Wise Spending Breakdown ({categoryList.length} Categories)</span>
+              </div>
+              {showCategoryBreakdown ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+            </button>
+
+            {showCategoryBreakdown && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1.5 max-h-48 overflow-y-auto">
+                {categoryList.map(cat => (
+                  <div key={cat.categoryId} className="bg-white p-2.5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 block leading-tight">{cat.categoryName}</span>
+                      <span className="text-[10px] font-medium text-slate-500">{cat.count} day(s)</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs font-extrabold text-emerald-800 block">₹{cat.totalAmount.toLocaleString('en-IN')}</span>
+                      <span className="text-[9px] text-slate-400">
+                        O: ₹{cat.onlineAmount} | C: ₹{cat.cashAmount}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Daily History List */}
         <div className="p-4 overflow-y-auto space-y-3 flex-1 bg-slate-50/40">

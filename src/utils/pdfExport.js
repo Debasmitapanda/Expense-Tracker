@@ -237,6 +237,163 @@ export async function exportMonthlyExpensesPDF({
 
     currentY += 42;
 
+    // 1. Calculate Monthly Category Sums across all days in this month
+    const categorySums = {};
+
+    sortedDaySummaries.forEach(day => {
+      if (day.entries && day.entries.length > 0) {
+        day.entries.forEach(entry => {
+          const catId = entry.categoryId || entry.categoryName;
+          const amt = parseFloat(entry.amount) || 0;
+          const isWithdraw = Boolean(entry.isCashWithdraw || catId === 'cash_withdraw');
+          const pMode = entry.paymentMode || 'Online';
+          const name = entry.categoryName || catId;
+
+          if (!categorySums[catId]) {
+            categorySums[catId] = {
+              categoryId: catId,
+              categoryName: name,
+              totalAmount: 0,
+              onlineAmount: 0,
+              cashAmount: 0,
+              count: 0,
+              isCashWithdraw: isWithdraw
+            };
+          }
+
+          categorySums[catId].totalAmount += amt;
+          categorySums[catId].count += 1;
+          if (!isWithdraw) {
+            if (pMode === 'Online') {
+              categorySums[catId].onlineAmount += amt;
+            } else {
+              categorySums[catId].cashAmount += amt;
+            }
+          }
+        });
+      }
+    });
+
+    const categoryList = Object.values(categorySums).filter(c => !c.isCashWithdraw);
+    categoryList.sort((a, b) => b.totalAmount - a.totalAmount); // Sort highest spent category first
+
+    const withdrawList = Object.values(categorySums).filter(c => c.isCashWithdraw);
+
+    // --- Section 1: Category-Wise Monthly Summary Table ---
+    if (categoryList.length > 0 || withdrawList.length > 0) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(15, 118, 110);
+      doc.text(`1. Category-Wise Monthly Expense Breakdown`, 14, currentY);
+      currentY += 6;
+
+      // Table Header
+      doc.setFillColor(15, 157, 88);
+      doc.rect(14, currentY, pageWidth - 28, 7.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(255, 255, 255);
+
+      doc.text('#', 18, currentY + 5);
+      doc.text('Category Name', 28, currentY + 5);
+      doc.text('Entries Logged', 95, currentY + 5);
+      doc.text('Online (Rs.)', 125, currentY + 5);
+      doc.text('Cash (Rs.)', 152, currentY + 5);
+      doc.text('Total Spent (Rs.)', pageWidth - 18, currentY + 5, { align: 'right' });
+
+      currentY += 8.5;
+
+      categoryList.forEach((cat, idx) => {
+        if (currentY > 265) {
+          doc.addPage();
+          currentY = 20;
+        }
+
+        const isEven = idx % 2 === 0;
+        if (isEven) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(14, currentY - 1, pageWidth - 28, 6.5, 'F');
+        }
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(100, 116, 139);
+        doc.text(String(idx + 1), 18, currentY + 3.8);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(30, 41, 59);
+        doc.text(cat.categoryName, 28, currentY + 3.8);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(100, 116, 139);
+        doc.text(`${cat.count} time(s)`, 95, currentY + 3.8);
+
+        doc.setTextColor(16, 120, 90);
+        doc.text(cat.onlineAmount > 0 ? `Rs. ${cat.onlineAmount.toLocaleString('en-IN')}` : '-', 125, currentY + 3.8);
+
+        doc.setTextColor(180, 83, 9);
+        doc.text(cat.cashAmount > 0 ? `Rs. ${cat.cashAmount.toLocaleString('en-IN')}` : '-', 152, currentY + 3.8);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(15, 118, 110);
+        doc.text(`Rs. ${cat.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, pageWidth - 18, currentY + 3.8, { align: 'right' });
+
+        currentY += 6.5;
+      });
+
+      // Category Table Grand Total Row
+      doc.setFillColor(236, 253, 245);
+      doc.setDrawColor(167, 243, 208);
+      doc.roundedRect(14, currentY, pageWidth - 28, 7.5, 1, 1, 'FD');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(6, 78, 59);
+      doc.text('MONTHLY GRAND TOTAL', 18, currentY + 5);
+
+      doc.setFontSize(8.5);
+      doc.text(`Online: Rs. ${monthlyOnline.toLocaleString('en-IN')}`, 125, currentY + 5);
+      doc.text(`Cash: Rs. ${monthlyCash.toLocaleString('en-IN')}`, 152, currentY + 5);
+
+      doc.setFontSize(9.5);
+      doc.setTextColor(15, 118, 110);
+      doc.text(`Rs. ${monthlyTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, pageWidth - 18, currentY + 5, { align: 'right' });
+
+      currentY += 12;
+
+      // Cash Withdrawals Category Summary Row (if present)
+      if (withdrawList.length > 0) {
+        withdrawList.forEach(wCat => {
+          doc.setFillColor(239, 246, 255);
+          doc.setDrawColor(191, 219, 254);
+          doc.roundedRect(14, currentY, pageWidth - 28, 7, 1, 1, 'FD');
+
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8.5);
+          doc.setTextColor(30, 58, 138);
+          doc.text(`* ${wCat.categoryName} (Cash Transfers)`, 18, currentY + 4.5);
+
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(37, 99, 235);
+          doc.text(`${wCat.count} transfer(s)`, 95, currentY + 4.5);
+          doc.text('(Excluded from Expense Total)', 125, currentY + 4.5);
+
+          doc.setFont('helvetica', 'bold');
+          doc.text(`Rs. ${wCat.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, pageWidth - 18, currentY + 4.5, { align: 'right' });
+
+          currentY += 10;
+        });
+      }
+
+      currentY += 6;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(15, 118, 110);
+      doc.text(`2. Itemized Daily Log Breakdown`, 14, currentY);
+      currentY += 6;
+    }
+
+    // --- Section 2: Itemized Daily Breakdown ---
     if (sortedDaySummaries.length === 0) {
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(10);
