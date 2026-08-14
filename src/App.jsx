@@ -81,7 +81,13 @@ export default function App() {
       const updated = { ...prev };
       delete updated[catId]; // Clear legacy unkeyed entry if present
 
-      if (data.amount === '' && !data.note) {
+      const isWithdrawCategory = categoryObj?.isCashWithdraw || catId === 'cash_withdraw';
+      const isDefaultWithdraw = isWithdrawCategory 
+        ? (!data.withdrawOption || data.withdrawOption === categoryObj?.options?.[0]) 
+        : true;
+
+      // An entry should only be deleted if amount, note, and custom dropdown value are all empty
+      if (data.amount === '' && !data.note && isDefaultWithdraw) {
         delete updated[compositeKey];
       } else {
         updated[compositeKey] = {
