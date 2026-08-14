@@ -1,15 +1,18 @@
-import React, { useState } from 'react';
-import { X, History, Calendar, Download, ArrowRight, FileSpreadsheet, Building2, Filter } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { X, History, Calendar, Download, ArrowRight, FileSpreadsheet, Building2, Filter, Upload, HardDrive } from 'lucide-react';
 import { exportDailyExpensesPDF, exportMonthlyExpensesPDF } from '../utils/pdfExport';
+import { getTodayDateString } from '../data/categories';
 
 export default function HistoryModal({ 
   isOpen, 
   onClose, 
   savedHistory = {}, 
-  onSelectDate 
+  onSelectDate,
+  onRestoreHistory
 }) {
   const [selectedMonthKey, setSelectedMonthKey] = useState('ALL');
   const [isExportingMonthly, setIsExportingMonthly] = useState(false);
+  const fileInputRef = useRef(null);
 
   if (!isOpen) return null;
 
@@ -133,6 +136,38 @@ export default function HistoryModal({
     setIsExportingMonthly(false);
   };
 
+  // Export JSON Backup file of all history
+  const handleExportBackupJSON = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(savedHistory, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `ExpenseTracker_Backup_${getTodayDateString()}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
+  // Import JSON Backup file
+  const handleImportBackupJSON = (event) => {
+    const fileReader = new FileReader();
+    if (event.target.files && event.target.files[0]) {
+      fileReader.readAsText(event.target.files[0], "UTF-8");
+      fileReader.onload = (e) => {
+        try {
+          const parsed = JSON.parse(e.target.result);
+          if (parsed && typeof parsed === 'object') {
+            if (onRestoreHistory) onRestoreHistory(parsed);
+            alert('History backup restored successfully!');
+          } else {
+            alert('Invalid backup file format.');
+          }
+        } catch (err) {
+          alert('Could not parse backup file.');
+        }
+      };
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-fade-in">
       <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
@@ -213,7 +248,7 @@ export default function HistoryModal({
               </div>
               <h4 className="text-base font-bold text-slate-700">No Saved History Found</h4>
               <p className="text-xs text-slate-500 max-w-xs mx-auto mt-1">
-                Click <strong>Save to History</strong> in the top navbar after entering your daily expenses to permanently store your record here!
+                Expenses entered on any date are automatically saved in your browser's history!
               </p>
             </div>
           ) : (
@@ -292,15 +327,45 @@ export default function HistoryModal({
           )}
         </div>
 
-        {/* Modal Footer */}
-        <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-xs text-slate-500 font-medium">
-          <span>Saved Days in View: <strong>{filteredDailySummaries.length}</strong></span>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 font-bold text-slate-600 hover:bg-slate-200/60 rounded-xl transition-colors"
-          >
-            Close
-          </button>
+        {/* Modal Footer with Data Backup & Restore Tools */}
+        <div className="p-3.5 border-t border-slate-200/80 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs text-slate-500 font-medium">
+          <span>Saved Days: <strong>{filteredDailySummaries.length}</strong></span>
+
+          <div className="flex items-center space-x-2">
+            {/* Backup Export Button */}
+            <button
+              onClick={handleExportBackupJSON}
+              title="Download a backup file (.json) of all your history"
+              className="px-3 py-1.5 font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl transition-colors flex items-center space-x-1 cursor-pointer"
+            >
+              <HardDrive className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Export Backup</span>
+            </button>
+
+            {/* Backup Restore Button */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleImportBackupJSON}
+              accept=".json"
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              title="Upload a backup file (.json) to restore your history"
+              className="px-3 py-1.5 font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl transition-colors flex items-center space-x-1 cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5 text-blue-600" />
+              <span>Restore Backup</span>
+            </button>
+
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 font-bold text-slate-600 hover:bg-slate-200/60 rounded-xl transition-colors"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -31,9 +31,76 @@ export default function App() {
     initialNote: ''
   });
 
-  // Persist active draft expenses state to localStorage whenever modified
+  // Auto-sync draft expenses to localStorage and history whenever modified
   useEffect(() => {
     saveExpensesToStorage(expenses);
+
+    // Auto-update savedHistory for all active dates so history is NEVER lost on exit
+    const dateGroups = {};
+    Object.values(expenses).forEach(entry => {
+      if (entry && entry.date && entry.amount !== undefined && entry.amount !== '') {
+        const amt = parseFloat(entry.amount);
+        if (!isNaN(amt) && amt > 0) {
+          if (!dateGroups[entry.date]) dateGroups[entry.date] = [];
+          dateGroups[entry.date].push(entry);
+        }
+      }
+    });
+
+    if (Object.keys(dateGroups).length > 0) {
+      setSavedHistory(prev => {
+        const updatedHistory = { ...prev };
+        Object.entries(dateGroups).forEach(([dStr, entries]) => {
+          let dayTotal = 0;
+          let onlineTotal = 0;
+          let cashTotal = 0;
+          let withdrawTotal = 0;
+          let itemCount = 0;
+
+          const dateEntries = entries.map(item => {
+            const amt = parseFloat(item.amount);
+            const pMode = item.paymentMode || 'Online';
+            const catObj = ALL_CATEGORIES.find(c => c.id === item.categoryId);
+            const isWithdraw = catObj?.isCashWithdraw || item.categoryId === 'cash_withdraw';
+
+            if (isWithdraw) {
+              withdrawTotal += amt;
+            } else {
+              dayTotal += amt;
+              itemCount += 1;
+              if (pMode === 'Online') {
+                onlineTotal += amt;
+              } else {
+                cashTotal += amt;
+              }
+            }
+
+            return {
+              categoryId: item.categoryId,
+              categoryName: item.categoryName || catObj?.name || item.categoryId,
+              amount: item.amount,
+              date: dStr,
+              paymentMode: pMode,
+              withdrawOption: item.withdrawOption || '',
+              note: item.note || '',
+              isCashWithdraw: isWithdraw
+            };
+          });
+
+          updatedHistory[dStr] = {
+            date: dStr,
+            totalAmount: dayTotal,
+            onlineTotal,
+            cashTotal,
+            withdrawTotal,
+            itemCount,
+            entries: dateEntries,
+            savedAt: updatedHistory[dStr]?.savedAt || new Date().toISOString()
+          };
+        });
+        return updatedHistory;
+      });
+    }
   }, [expenses]);
 
   // Persist committed history state to localStorage whenever modified
@@ -179,6 +246,18 @@ export default function App() {
     setTimeout(() => setToastMessage(''), 4000);
   };
 
+  // Restore imported JSON history backup
+  const handleRestoreHistory = (importedObj) => {
+    if (importedObj && typeof importedObj === 'object') {
+      setSavedHistory(prev => ({
+        ...prev,
+        ...importedObj
+      }));
+      setToastMessage('History backup successfully restored!');
+      setTimeout(() => setToastMessage(''), 3500);
+    }
+  };
+
   // Open note modal for specific category
   const handleOpenNoteModal = (catId, catName, currentNote) => {
     setNoteModalConfig({
@@ -279,6 +358,7 @@ export default function App() {
         onClose={() => setIsHistoryOpen(false)}
         savedHistory={savedHistory}
         onSelectDate={(dateStr) => setSelectedDate(dateStr)}
+        onRestoreHistory={handleRestoreHistory}
       />
     </div>
   );
