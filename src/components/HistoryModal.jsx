@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { X, History, Calendar, Download, ArrowRight, FileSpreadsheet, Building2, Filter, Upload, HardDrive } from 'lucide-react';
+import { X, History, Calendar, Download, ArrowRight, FileSpreadsheet, Building2, Filter, Trash2 } from 'lucide-react';
 import { exportDailyExpensesPDF, exportMonthlyExpensesPDF } from '../utils/pdfExport';
 import { getTodayDateString } from '../data/categories';
 
@@ -8,6 +8,7 @@ export default function HistoryModal({
   onClose, 
   savedHistory = {}, 
   onSelectDate,
+  onDeleteDate,
   onRestoreHistory
 }) {
   const [selectedMonthKey, setSelectedMonthKey] = useState('ALL');
@@ -298,7 +299,7 @@ export default function HistoryModal({
                     )}
                   </div>
 
-                  {/* Right Actions: Download Data & Select Date */}
+                  {/* Right Actions: Download Data, Select Date & Delete Date */}
                   <div className="flex items-center space-x-2 self-end sm:self-center shrink-0">
                     <button
                       onClick={() => handleDownloadDayPDF(item)}
@@ -319,6 +320,19 @@ export default function HistoryModal({
                     >
                       <span>Open Date</span>
                       <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Are you sure you want to delete history for ${formattedDate}?`)) {
+                          if (onDeleteDate) onDeleteDate(item.date);
+                        }
+                      }}
+                      className="p-2 text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-all cursor-pointer flex items-center space-x-1"
+                      title="Delete this date's history"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span className="hidden xs:inline text-xs font-bold">Delete</span>
                     </button>
                   </div>
                 </div>

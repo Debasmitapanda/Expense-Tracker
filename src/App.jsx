@@ -21,6 +21,7 @@ import {
   fetchHistoryFromDb, 
   saveHistoryRecordToDb, 
   restoreHistoryToDb,
+  deleteHistoryDateFromDb,
   getMeApi,
   getStoredUser,
   logoutUser
@@ -204,10 +205,11 @@ export default function App() {
   // Helper to retrieve entry data for a category on selectedDate
   const getCategoryEntry = (catId, targetDate) => {
     const key = `${targetDate}_${catId}`;
-    if (expenses[key]) return expenses[key];
+    if (expenses[key] !== undefined) return expenses[key];
     
-    // Fallback: check if saved history has this entry for targetDate
-    if (savedHistory[targetDate]?.entries) {
+    // Check if targetDate has ANY entry stored in expenses
+    const hasAnyDraftForDate = Object.values(expenses).some(e => e?.date === targetDate);
+    if (!hasAnyDraftForDate && savedHistory[targetDate]?.entries) {
       const found = savedHistory[targetDate].entries.find(e => e.categoryId === catId);
       if (found) return found;
     }
@@ -228,7 +230,7 @@ export default function App() {
     }
   });
 
-  // Handle entry update for any category row
+  // Handle entry update for any category row (stores 0 or empty amounts directly)
   const handleChangeEntry = (catId, data) => {
     const categoryObj = ALL_CATEGORIES.find(c => c.id === catId);
     const entryDate = data.date || selectedDate;
@@ -238,24 +240,13 @@ export default function App() {
       const updated = { ...prev };
       delete updated[catId]; // Clear legacy unkeyed entry if present
 
-      const isWithdrawCategory = categoryObj?.isCashWithdraw || catId === 'cash_withdraw';
-      const isDefaultWithdraw = isWithdrawCategory 
-        ? (!data.withdrawOption || data.withdrawOption === categoryObj?.options?.[0]) 
-        : true;
-      const isDefaultPaymentMode = !data.paymentMode || data.paymentMode === 'Online';
-
-      // An entry should only be deleted if amount, note, payment mode (default 'Online'), and withdrawal option are all default/empty
-      if (data.amount === '' && !data.note && isDefaultWithdraw && isDefaultPaymentMode) {
-        delete updated[compositeKey];
-      } else {
-        updated[compositeKey] = {
-          ...updated[compositeKey],
-          ...data,
-          categoryId: catId,
-          categoryName: categoryObj ? categoryObj.name : catId,
-          date: entryDate
-        };
-      }
+      updated[compositeKey] = {
+        ...updated[compositeKey],
+        ...data,
+        categoryId: catId,
+        categoryName: categoryObj ? categoryObj.name : catId,
+        date: entryDate
+      };
       return updated;
     });
   };
@@ -406,6 +397,37 @@ export default function App() {
     setTimeout(() => setToastMessage(''), 3500);
   };
 
+  // Delete a specific date record from History Modal
+  const handleDeleteHistoryDate = (dateStr) => {
+    setSavedHistory(prev => {
+      const updated = { ...prev };
+      delete updated[dateStr];
+      saveCommittedHistoryToStorage(updated);
+      return updated;
+    });
+
+    if (dbStatus === 'connected') {
+      deleteHistoryDateFromDb(dateStr);
+    }
+
+    setExpenses(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(k => {
+        if (updated[k]?.date === dateStr) {
+          delete updated[k];
+        }
+      });
+      saveExpensesToStorage(updated);
+      if (dbStatus === 'connected') {
+        deleteDraftsForDateFromDb(dateStr);
+      }
+      return updated;
+    });
+
+    setToastMessage(`Deleted history for ${dateStr}`);
+    setTimeout(() => setToastMessage(''), 3000);
+  };
+
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-800 pb-36 font-sans antialiased selection:bg-emerald-500 selection:text-white">
       {/* Top Bar Header */}
@@ -471,6 +493,7 @@ export default function App() {
         onClose={() => setIsHistoryOpen(false)}
         savedHistory={savedHistory}
         onSelectDate={(dateStr) => setSelectedDate(dateStr)}
+        onDeleteDate={handleDeleteHistoryDate}
         onRestoreHistory={handleRestoreHistory}
       />
     </div>

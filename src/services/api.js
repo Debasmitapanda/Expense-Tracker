@@ -237,4 +237,20 @@ export async function restoreHistoryToDb(historyObj) {
     console.error('Error restoring history to MongoDB:', err);
     return false;
   }
+}export async function deleteHistoryDateFromDb(dateStr) {
+  try {
+    const token = getStoredToken();
+    if (!token) return false;
+
+    const res = await fetch(`${BASE_URL}/history/${dateStr}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) throw new Error('Failed to delete history record');
+    const data = await res.json();
+    return data.success;
+  } catch (err) {
+    console.error(`Error deleting history date ${dateStr} from MongoDB:`, err);
+    return false;
+  }
 }
