@@ -26,6 +26,7 @@ mongoose.set('strictQuery', false);
 async function connectDB() {
   try {
     await mongoose.connect(MONGODB_URI, {
+      dbName: process.env.DB_NAME || 'Expenditure',
       serverSelectionTimeoutMS: 5000
     });
     isConnected = true;
