@@ -4,6 +4,7 @@ import CategoryRow from './components/CategoryRow';
 import SummaryCard from './components/SummaryCard';
 import NoteModal from './components/NoteModal';
 import HistoryModal from './components/HistoryModal';
+import AuthModal from './components/AuthModal';
 import { 
   ALL_CATEGORIES, 
   getTodayDateString, 
@@ -12,13 +13,30 @@ import {
   loadCommittedHistory,
   saveCommittedHistoryToStorage
 } from './data/categories';
+import { 
+  checkDbHealth, 
+  fetchDraftsFromDb, 
+  syncDraftsToDb, 
+  deleteDraftsForDateFromDb, 
+  fetchHistoryFromDb, 
+  saveHistoryRecordToDb, 
+  restoreHistoryToDb,
+  getMeApi,
+  getStoredUser,
+  logoutUser
+} from './services/api';
 import { ShieldCheck } from 'lucide-react';
 
 export default function App() {
   const [selectedDate, setSelectedDate] = useState(() => getTodayDateString());
   const [expenses, setExpenses] = useState(() => loadSavedExpenses());
   const [savedHistory, setSavedHistory] = useState(() => loadCommittedHistory());
+  const [dbStatus, setDbStatus] = useState('disconnected');
   
+  // Auth state
+  const [currentUser, setCurrentUser] = useState(() => getStoredUser());
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSavedJustNow, setIsSavedJustNow] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -31,9 +49,76 @@ export default function App() {
     initialNote: ''
   });
 
-  // Auto-sync draft expenses to localStorage and history whenever modified
+  // Check MongoDB connection and restore logged-in user on app mount
   useEffect(() => {
+    async function initApp() {
+      const health = await checkDbHealth();
+      if (health.status === 'connected') {
+        setDbStatus('connected');
+      } else {
+        setDbStatus('disconnected');
+      }
+
+      const user = await getMeApi();
+      if (user) {
+        setCurrentUser(user);
+        loadUserData();
+      } else {
+        setIsAuthOpen(true);
+      }
+    }
+
+    initApp();
+  }, []);
+
+  // Load user data from MongoDB
+  const loadUserData = async () => {
+    const [dbDrafts, dbHistory] = await Promise.all([
+      fetchDraftsFromDb(),
+      fetchHistoryFromDb()
+    ]);
+
+    if (dbDrafts && Object.keys(dbDrafts).length > 0) {
+      setExpenses(dbDrafts);
+    } else {
+      setExpenses({});
+    }
+
+    if (dbHistory && Object.keys(dbHistory).length > 0) {
+      setSavedHistory(dbHistory);
+    } else {
+      setSavedHistory({});
+    }
+  };
+
+  // Handle successful login or registration
+  const handleAuthSuccess = (user) => {
+    setCurrentUser(user);
+    setIsAuthOpen(false);
+    loadUserData();
+    setToastMessage(`Welcome back, ${user.name}!`);
+    setTimeout(() => setToastMessage(''), 3500);
+  };
+
+  // Handle logout
+  const handleLogout = () => {
+    logoutUser();
+    setCurrentUser(null);
+    setExpenses({});
+    setSavedHistory({});
+    setIsAuthOpen(true);
+    setToastMessage('Logged out successfully.');
+    setTimeout(() => setToastMessage(''), 3000);
+  };
+
+  // Auto-sync draft expenses to localStorage & MongoDB whenever modified
+  useEffect(() => {
+    if (!currentUser) return;
+    
     saveExpensesToStorage(expenses);
+    if (dbStatus === 'connected') {
+      syncDraftsToDb(expenses);
+    }
 
     // Auto-update savedHistory for all active dates so history is NEVER lost on exit
     const dateGroups = {};
@@ -101,12 +186,17 @@ export default function App() {
         return updatedHistory;
       });
     }
-  }, [expenses]);
+  }, [expenses, dbStatus, currentUser]);
 
-  // Persist committed history state to localStorage whenever modified
+  // Persist committed history state to localStorage & MongoDB whenever modified
   useEffect(() => {
+    if (!currentUser) return;
+
     saveCommittedHistoryToStorage(savedHistory);
-  }, [savedHistory]);
+    if (dbStatus === 'connected' && Object.keys(savedHistory).length > 0) {
+      restoreHistoryToDb(savedHistory);
+    }
+  }, [savedHistory, dbStatus, currentUser]);
 
   // Compute total number of dates committed in history
   const historyCount = Object.keys(savedHistory).length;
@@ -152,9 +242,10 @@ export default function App() {
       const isDefaultWithdraw = isWithdrawCategory 
         ? (!data.withdrawOption || data.withdrawOption === categoryObj?.options?.[0]) 
         : true;
+      const isDefaultPaymentMode = !data.paymentMode || data.paymentMode === 'Online';
 
-      // An entry should only be deleted if amount, note, and custom dropdown value are all empty
-      if (data.amount === '' && !data.note && isDefaultWithdraw) {
+      // An entry should only be deleted if amount, note, payment mode (default 'Online'), and withdrawal option are all default/empty
+      if (data.amount === '' && !data.note && isDefaultWithdraw && isDefaultPaymentMode) {
         delete updated[compositeKey];
       } else {
         updated[compositeKey] = {
@@ -235,6 +326,10 @@ export default function App() {
       [selectedDate]: dayRecord
     }));
 
+    if (dbStatus === 'connected') {
+      saveHistoryRecordToDb(dayRecord);
+    }
+
     setIsSavedJustNow(true);
     const formattedDate = new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', {
       month: 'short',
@@ -253,6 +348,11 @@ export default function App() {
         ...prev,
         ...importedObj
       }));
+
+      if (dbStatus === 'connected') {
+        restoreHistoryToDb(importedObj);
+      }
+
       setToastMessage('History backup successfully restored!');
       setTimeout(() => setToastMessage(''), 3500);
     }
@@ -294,6 +394,10 @@ export default function App() {
       return updated;
     });
 
+    if (dbStatus === 'connected') {
+      deleteDraftsForDateFromDb(targetDate);
+    }
+
     const formattedDate = new Date(targetDate + 'T00:00:00').toLocaleDateString('en-IN', {
       month: 'short',
       day: 'numeric'
@@ -312,11 +416,14 @@ export default function App() {
         onOpenHistory={() => setIsHistoryOpen(true)}
         historyCount={historyCount}
         isSavedJustNow={isSavedJustNow}
+        dbStatus={dbStatus}
+        currentUser={currentUser}
+        onLogout={handleLogout}
       />
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-2xl flex items-center space-x-2 animate-bounce max-w-sm text-center">
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs sm:text-sm font-bold px-4 py-2.5 rounded-full shadow-2xl flex items-center space-x-2 animate-bounce max-w-sm text-center">
           <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
@@ -341,6 +448,12 @@ export default function App() {
         selectedDate={selectedDate}
         expenses={currentEntriesMap}
         onResetDay={handleResetDay}
+      />
+
+      {/* Authentication Login / Signup Modal */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        onAuthSuccess={handleAuthSuccess}
       />
 
       {/* Note Modal */}

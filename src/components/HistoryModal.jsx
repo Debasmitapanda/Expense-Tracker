@@ -327,45 +327,16 @@ export default function HistoryModal({
           )}
         </div>
 
-        {/* Modal Footer with Data Backup & Restore Tools */}
-        <div className="p-3.5 border-t border-slate-200/80 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs text-slate-500 font-medium">
+        {/* Modal Footer */}
+        <div className="p-3.5 border-t border-slate-200/80 bg-slate-50 flex items-center justify-between gap-2.5 text-xs text-slate-500 font-medium">
           <span>Saved Days: <strong>{filteredDailySummaries.length}</strong></span>
 
-          <div className="flex items-center space-x-2">
-            {/* Backup Export Button */}
-            <button
-              onClick={handleExportBackupJSON}
-              title="Download a backup file (.json) of all your history"
-              className="px-3 py-1.5 font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl transition-colors flex items-center space-x-1 cursor-pointer"
-            >
-              <HardDrive className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Export Backup</span>
-            </button>
-
-            {/* Backup Restore Button */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleImportBackupJSON}
-              accept=".json"
-              className="hidden"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              title="Upload a backup file (.json) to restore your history"
-              className="px-3 py-1.5 font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl transition-colors flex items-center space-x-1 cursor-pointer"
-            >
-              <Upload className="w-3.5 h-3.5 text-blue-600" />
-              <span>Restore Backup</span>
-            </button>
-
-            <button
-              onClick={onClose}
-              className="px-3 py-1.5 font-bold text-slate-600 hover:bg-slate-200/60 rounded-xl transition-colors"
-            >
-              Close
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 font-extrabold text-slate-700 bg-white hover:bg-slate-200/60 border border-slate-300 rounded-xl transition-colors cursor-pointer"
+          >
+            Close
+          </button>
         </div>
       </div>
     </div>
