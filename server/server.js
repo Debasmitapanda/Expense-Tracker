@@ -30,6 +30,14 @@ async function connectDB() {
     });
     isConnected = true;
     console.log(`[MongoDB Connected] Target DB URI: ${MONGODB_URI}`);
+
+    // Clean up any legacy indexes (like email_1) on users collection
+    try {
+      await User.syncIndexes();
+      await User.collection.dropIndex('email_1').catch(() => {});
+    } catch (idxErr) {
+      // Ignore if index doesn't exist
+    }
   } catch (err) {
     isConnected = false;
     console.error(`[MongoDB Connection Error] ${err.message}`);
@@ -103,6 +111,35 @@ app.post('/api/auth/register', async (req, res) => {
       }
     });
   } catch (err) {
+    if (err.code === 11000) {
+      // If error is due to stale email_1 index, drop it and retry creation once
+      if (err.keyPattern && err.keyPattern.email) {
+        try {
+          await User.collection.dropIndex('email_1').catch(() => {});
+          const cleanUsername = req.body.username.trim().toLowerCase();
+          const salt = await bcrypt.genSalt(10);
+          const hashedPassword = await bcrypt.hash(req.body.password, salt);
+          const newUser = await User.create({
+            username: cleanUsername,
+            name: req.body.name.trim(),
+            password: hashedPassword
+          });
+          const token = jwt.sign(
+            { id: newUser._id, username: newUser.username, name: newUser.name },
+            JWT_SECRET,
+            { expiresIn: '30d' }
+          );
+          return res.status(201).json({
+            success: true,
+            token,
+            user: { id: newUser._id, username: newUser.username, name: newUser.name }
+          });
+        } catch (retryErr) {
+          return res.status(400).json({ success: false, error: 'Registration error. Please try again.' });
+        }
+      }
+      return res.status(400).json({ success: false, error: 'Username already taken. Please choose another.' });
+    }
     res.status(500).json({ success: false, error: err.message });
   }
 });
