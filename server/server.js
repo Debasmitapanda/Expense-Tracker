@@ -366,6 +366,22 @@ app.delete('/api/history/:date', authMiddleware, async (req, res) => {
   }
 });
 
+// --- SERVE STATIC FRONTEND IN PRODUCTION ---
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distPath = path.join(__dirname, '../dist');
+
+app.use(express.static(distPath));
+
+app.get('*', (req, res) => {
+  if (!req.path.startsWith('/api')) {
+    res.sendFile(path.join(distPath, 'index.html'));
+  }
+});
+
 // Start Express Server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Express Backend Server] Running on http://0.0.0.0:${PORT}`);
