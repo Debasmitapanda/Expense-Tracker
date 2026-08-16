@@ -1,6 +1,6 @@
 // API Client service for Expense Tracker MongoDB Backend Server
 
-const BASE_URL = '/api';
+const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : 'https://expensetracker-trko.onrender.com/api');
 const TOKEN_KEY = 'gpay_auth_token';
 const USER_KEY = 'gpay_auth_user';
 
